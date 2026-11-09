@@ -81,7 +81,7 @@ def list_datasets():
 
 
 def get_current_dataset_version():
-    """Retrieve Git and DVC provenance for the current dataset."""
+    """Retrieve current dataset provenance and match historical tags."""
 
     commit = run_command([
         "git",
@@ -91,16 +91,6 @@ def get_current_dataset_version():
 
     if commit["status"] != "success":
         return commit
-
-    tags = run_command([
-        "git",
-        "tag",
-        "--points-at",
-        "HEAD",
-    ])
-
-    if tags["status"] != "success":
-        return tags
 
     metadata_path = PROJECT_ROOT / "data/train.csv.dvc"
 
@@ -115,32 +105,82 @@ def get_current_dataset_version():
             if item["path"] == "train.csv"
         )
 
-    except (OSError, KeyError, StopIteration, TypeError, yaml.YAMLError):
+        current_hash = output.get("md5")
+
+        if not current_hash:
+            raise ValueError("Missing DVC hash")
+
+    except (OSError, KeyError, StopIteration, TypeError,
+            ValueError, yaml.YAMLError):
         return {
             "status": "error",
             "error": "Dataset metadata is unavailable or invalid",
         }
 
-    matching_tags = [
-        tag
-        for tag in tags["output"].splitlines()
-        if VERSION_PATTERN.fullmatch(tag)
-    ]
+    tags_result = run_command([
+        "git",
+        "tag",
+        "--list",
+        "dataset-v*",
+    ])
+
+    if tags_result["status"] != "success":
+        return tags_result
+
+    matching_versions = []
+
+    for tag in tags_result["output"].splitlines():
+
+        if not VERSION_PATTERN.fullmatch(tag):
+            continue
+
+        historical_metadata = run_command([
+            "git",
+            "show",
+            f"refs/tags/{tag}:data/train.csv.dvc",
+        ])
+
+        if historical_metadata["status"] != "success":
+            continue
+
+        try:
+            historical_data = yaml.safe_load(
+                historical_metadata["output"]
+            )
+
+            historical_output = next(
+                item
+                for item in historical_data["outs"]
+                if item["path"] == "train.csv"
+            )
+
+            if historical_output.get("md5") == current_hash:
+                matching_versions.append(tag)
+
+        except (KeyError, TypeError, StopIteration,
+                yaml.YAMLError):
+            continue
+
+    status_result = detect_dataset_changes()
+
+    if status_result["status"] != "success":
+        return status_result
 
     return {
         "status": "success",
         "dataset": "data/train.csv",
-        "version_tags": matching_tags,
+        "version_tags": matching_versions,
         "git_commit": commit["output"],
-        "dvc_hash": output.get("md5"),
+        "dvc_hash": current_hash,
         "tracked_size_bytes": output.get("size"),
+        "workspace_clean": not bool(status_result["data"]),
         "note": (
-            "The version tags identify HEAD. "
-            "The DVC hash comes from the current metadata file. "
-            "Check dataset status for uncommitted changes."
+            "Dataset versions are identified by matching "
+            "DVC content hashes against historical Git tags. "
+            "git_commit represents current HEAD, not necessarily "
+            "the commit that originally introduced the dataset."
         ),
     }
-
 
 def validate_version(version):
     """Accept only existing dataset version tags."""
