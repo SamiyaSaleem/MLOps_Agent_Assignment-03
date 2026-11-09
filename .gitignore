@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+*.log
+mlruns/
+mlartifacts/
+mlflow.db
+airflow.db
+airflow.cfg
+airflow-logs/
+models/*.pkl
+models/*.joblib
