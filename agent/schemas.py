@@ -12,7 +12,7 @@ class AgentResponse(BaseModel):
 	status:str
 	answer:str
 	tools_used: list[str] = Field(default_factory=list)
-	evidenc: list[ToolEvidence] = Field(default_factory=list)
+	evidence: list[ToolEvidence] = Field(default_factory=list)
 	error: str | None = None
 	
 class ToolExecutionResult(BaseModel):
