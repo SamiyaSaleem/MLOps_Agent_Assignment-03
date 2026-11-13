@@ -207,7 +207,7 @@ def get_failed_tasks(run_id):
 
 
 def get_task_diagnostics(run_id, task_id, try_number=1):
-    """Retrieve task execution logs and diagnostic evidence."""
+    """Identify known failures using sanitized Airflow log evidence."""
 
     if not validate_run_id(run_id):
         return {
@@ -238,44 +238,101 @@ def get_task_diagnostics(run_id, task_id, try_number=1):
             params={"full_content": True},
         )
 
-        # Return a bounded diagnostic summary.
-        # Do not expose raw logs directly through the AI agent.
         entries = data.get("content", [])
 
-        diagnostics = []
+        if isinstance(entries, str):
+            log_text = entries[:100000]
 
-        for entry in entries:
-            event = str(entry.get("event", ""))
+        elif isinstance(entries, list):
+            log_text = "\n".join(
+                str(entry.get("event", ""))
+                if isinstance(entry, dict)
+                else str(entry)
+                for entry in entries
+            )[:100000]
 
-            if any(
-                keyword in event.lower()
-                for keyword in (
-                    "error",
-                    "failed",
-                    "traceback",
-                    "exception",
-                )
-            ):
-                diagnostics.append({
-                    "timestamp": entry.get("timestamp"),
-                    "category": "failure_diagnostic",
-                })
+        else:
+            return {
+                "status": "error",
+                "error": "Unsupported Airflow log format",
+            }
+
+        failure_patterns = [
+            (
+                "IndentationError",
+                "Python indentation or syntax problem",
+                "Correct the Python indentation and rerun.",
+            ),
+            (
+                "SyntaxError",
+                "Python syntax problem",
+                "Correct the Python syntax and rerun.",
+            ),
+            (
+                "ModuleNotFoundError",
+                "Missing Python dependency or module",
+                "Check the Python environment and dependencies.",
+            ),
+            (
+                "FileNotFoundError",
+                "Required file is missing",
+                "Verify required files and configured paths.",
+            ),
+            (
+                "ConnectionError",
+                "External service connection failure",
+                "Check the external service and connection settings.",
+            ),
+            (
+                "TimeoutExpired",
+                "Execution timeout",
+                "Investigate the slow operation and timeout configuration.",
+            ),
+            (
+                "quality gate failed",
+                "Model quality threshold failure",
+                "Inspect evaluation metrics and the configured threshold.",
+            ),
+        ]
+
+        root_cause = "Unknown"
+        recommendation = (
+            "Inspect the task logs manually for further evidence."
+        )
+
+        for pattern, cause, action in failure_patterns:
+            if pattern.lower() in log_text.lower():
+                root_cause = cause
+                recommendation = action
+                break
+
+        diagnostic_count = sum(
+            log_text.lower().count(word)
+            for word in ("error", "failed", "traceback")
+        )
 
         return {
             "status": "success",
             "run_id": run_id,
             "task_id": task_id,
             "try_number": try_number,
-            "diagnostic_events": diagnostics[:20],
+            "root_cause": root_cause,
+            "recommendation": recommendation,
+            "failure_indicators_found": diagnostic_count,
+            "diagnosis_confidence": (
+                "pattern_match"
+                if root_cause != "Unknown"
+                else "insufficient_evidence"
+            ),
             "note": (
-                "Raw logs are withheld because they may "
-                "contain sensitive operational information."
+                "Diagnosis is based on recognized patterns "
+                "in actual Airflow task logs. "
+                "Raw logs are not exposed."
             ),
         }
 
     except Exception as exc:
         return error_response("get_task_diagnostics", exc)
-
 
 def trigger_training_pipeline(confirmed=False):
     """Trigger only the approved training DAG after confirmation."""
