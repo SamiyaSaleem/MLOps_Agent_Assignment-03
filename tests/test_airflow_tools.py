@@ -1,10 +1,7 @@
 import requests
-
 from agent.tools import airflow_tools
 
-
 TEST_RUN_ID = "manual__2026-11-09T12:32:47.155372+00:00"
-
 
 def test_list_dags(monkeypatch):
     def fake_api(method, path, **kwargs):

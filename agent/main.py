@@ -1,33 +1,31 @@
 import argparse
-
 from agent.orchestrator import ask_agent
 
-
 def main():
-    parser = argparse.ArgumentParser(
+    p = argparse.ArgumentParser(
         description="Intelligent MLOps AI Agent"
     )
 
-    parser.add_argument(
+    p.add_argument(
         "--question",
         type=str,
         help="Ask the MLOps agent a question",
     )
 
-    args = parser.parse_args()
+    arg = p.parse_args()
 
-    if args.question:
-        result = ask_agent(args.question)
+    if arg.question:
+        r = ask_agent(arg.question)
 
         print("\nMLOps AI AGENT")
         print("=" * 50)
 
-        print(result.answer)
+        print(r.answer)
 
         print("\nTools Used:")
-        print(result.tools_used)
+        print(r.tools_used)
 
-        if result.status != "success":
+        if r.status != "success":
             raise SystemExit(1)
 
         return
@@ -37,7 +35,7 @@ def main():
     print("DVC | MLflow | Airflow | Kubernetes")
     print("=" * 50)
 
-    print("Type 'exit' to quit.\n")
+    print("Type exit to quit.\n")
 
     while True:
         try:
@@ -53,12 +51,12 @@ def main():
         if not question:
             continue
 
-        result = ask_agent(question)
+        r = ask_agent(question)
 
         print("\nAgent:")
-        print(result.answer)
+        print(r.answer)
 
-        print("\nTools Used:", result.tools_used)
+        print("\nTools Used:", r.tools_used)
         print("-" * 50)
 
 

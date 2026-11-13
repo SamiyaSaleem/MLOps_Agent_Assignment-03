@@ -2,7 +2,6 @@ import json
 import logging
 import os
 from typing import Any
-
 from groq import Groq
 
 from agent.schemas import AgentResponse, ToolEvidence
@@ -12,9 +11,7 @@ from agent.tools.dvc_tools import (
     get_current_dataset_version,
 )
 
-from agent.tools.mlflow_tools import (
-    list_experiments,
-)
+from agent.tools.mlflow_tools import list_experiments
 
 from agent.tools.airflow_tools import (
     list_dags,
@@ -35,11 +32,10 @@ MODEL_NAME = os.getenv(
     "openai/gpt-oss-120b",
 )
 
-MAX_TOOL_ROUNDS = 10
-MAX_TOOL_CALLS = 16
+MAXIMUM_TOOL_ROUNDS = 10
+MAXIMUM_TOOL_CALLS = 16
 
 
-# Only approved read-only tools are exposed to the LLM.
 READ_ONLY_TOOLS = {
     "list_datasets": list_datasets,
     "get_current_dataset_version": get_current_dataset_version,
@@ -52,7 +48,7 @@ READ_ONLY_TOOLS = {
 }
 
 
-TOOL_DESCRIPTIONS = {
+DESCRIPTION_OF_TOOLS = {
     "list_datasets": (
         "List DVC-tracked datasets and available dataset information."
     ),
@@ -81,17 +77,15 @@ TOOL_DESCRIPTIONS = {
 
 
 def build_tool_definitions():
-    """Generate tool schemas from the approved read-only tools."""
-
     definitions = []
 
-    for tool_name in READ_ONLY_TOOLS:
+    for name_of_tool in READ_ONLY_TOOLS:
         definitions.append(
             {
                 "type": "function",
                 "function": {
-                    "name": tool_name,
-                    "description": TOOL_DESCRIPTIONS[tool_name],
+                    "name": name_of_tool,
+                    "description": DESCRIPTION_OF_TOOLS[name_of_tool],
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -141,38 +135,37 @@ Provide evidence-based summaries in simple English.
 
 
 def execute_tool(
-    name: str,
-    arguments: dict[str, Any],
+    n: str,
+    args: dict[str, Any],
 ) -> dict[str, Any]:
-    """Execute only explicitly allowlisted tools."""
 
-    if name not in READ_ONLY_TOOLS:
+    if n not in READ_ONLY_TOOLS:
         return {
             "status": "error",
             "error": "Tool is not approved",
         }
 
-    if arguments != {}:
+    if args != {}:
         return {
             "status": "error",
             "error": "This tool does not accept arguments",
         }
 
     try:
-        result = READ_ONLY_TOOLS[name]()
+        r = READ_ONLY_TOOLS[n]()
 
-        if not isinstance(result, dict):
+        if not isinstance(r, dict):
             return {
                 "status": "error",
                 "error": "Unexpected tool response",
             }
 
-        return result
+        return r
 
     except Exception as exc:
         LOGGER.warning(
             "Approved tool failed: %s (%s)",
-            name,
+            n,
             type(exc).__name__,
         )
 
@@ -183,17 +176,16 @@ def execute_tool(
         }
 
 
-def ask_agent(question: str) -> AgentResponse:
-    """Answer a question using Groq and approved MLOps tools."""
+def ask_agent(Q: str) -> AgentResponse:
 
-    if not isinstance(question, str) or not question.strip():
+    if not isinstance(Q, str) or not Q.strip():
         return AgentResponse(
             status="error",
             answer="Please provide a valid question.",
             error="invalid_question",
         )
 
-    if len(question) > 2000:
+    if len(Q) > 2000:
         return AgentResponse(
             status="error",
             answer="Question exceeds the 2000-character limit.",
@@ -208,7 +200,11 @@ def ask_agent(question: str) -> AgentResponse:
         )
 
     try:
-        client = Groq(timeout=30.0, max_retries=1)
+        client = Groq(
+            timeout=30.0,
+            max_retries=1,
+        )
+
     except Exception:
         return AgentResponse(
             status="error",
@@ -216,115 +212,118 @@ def ask_agent(question: str) -> AgentResponse:
             error="client_initialization_failed",
         )
 
-    messages = [
+    msg = [
         {
             "role": "system",
             "content": SYSTEM_PROMPT,
         },
         {
             "role": "user",
-            "content": question,
+            "content": Q,
         },
     ]
 
-    tools_used = []
+    used_tools = []
     evidence = []
-    tool_calls_total = 0
+    total_tool_calls = 0
 
     try:
-        for _ in range(MAX_TOOL_ROUNDS):
+        for _ in range(MAXIMUM_TOOL_ROUNDS):
+
             response = client.chat.completions.create(
-    model=MODEL_NAME,
-    messages=messages,
-    tools=build_tool_definitions(),
-    tool_choice="auto",
-    parallel_tool_calls=False,
-    temperature=0,
+                model=MODEL_NAME,
+                messages=msg,
+                tools=build_tool_definitions(),
+                tool_choice="auto",
+                parallel_tool_calls=False,
+                temperature=0,
             )
 
             message = response.choices[0].message
 
             if not message.tool_calls:
-                answer = message.content or (
+                ans = message.content or (
                     "No answer was returned by the language model."
                 )
 
                 return AgentResponse(
                     status="success",
-                    answer=answer,
-                    tools_used=tools_used,
+                    answer=ans,
+                    tools_used=used_tools,
                     evidence=evidence,
                 )
 
-            messages.append(message)
+            msg.append(message)
 
             for tool_call in message.tool_calls:
-                tool_calls_total += 1
-                tool_name = tool_call.function.name
 
-                if tool_calls_total > MAX_TOOL_CALLS:
-                    result = {
+                total_tool_calls += 1
+
+                name_of_tool = tool_call.function.name
+
+                if total_tool_calls > MAXIMUM_TOOL_CALLS:
+                    r = {
                         "status": "error",
                         "error": "Tool call limit reached",
                     }
+
                 else:
                     try:
-                        arguments = json.loads(
+                        args = json.loads(
                             tool_call.function.arguments or "{}"
                         )
 
-                        if not isinstance(arguments, dict):
-                            arguments = {"invalid": True}
+                        if not isinstance(args, dict):
+                            args = {"invalid": True}
 
-                    except json.JSONDecodeError:
-                        arguments = {"invalid": True}
+                    except (json.JSONDecodeError, TypeError):
+                        args = {"invalid": True}
 
-                    result = execute_tool(
-                        tool_name,
-                        arguments,
+                    r = execute_tool(
+                        name_of_tool,
+                        args,
                     )
 
-                tools_used.append(tool_name)
+                used_tools.append(name_of_tool)
 
                 evidence.append(
                     ToolEvidence(
-                        tool=tool_name,
-                        status=result.get("status", "error"),
+                        tool=name_of_tool,
+                        status=r.get("status", "error"),
                     )
                 )
 
-                messages.append(
+                msg.append(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "name": tool_name,
+                        "name": name_of_tool,
                         "content": json.dumps(
-                            result,
+                            r,
                             default=str,
                         )[:12000],
                     }
                 )
 
-            if tool_calls_total >= MAX_TOOL_CALLS:
+            if total_tool_calls >= MAXIMUM_TOOL_CALLS:
                 break
 
-        # Final response with no further tool execution.
         final_response = client.chat.completions.create(
             model=MODEL_NAME,
-            messages=messages,
+            messages=msg,
             tool_choice="none",
             temperature=0,
         )
 
-        answer = (
+        ans = (
             final_response.choices[0].message.content
             or "Unable to produce a final response."
         )
 
         return AgentResponse(
             status="success",
-            answer=answer,
-            tools_used=tools_used,
+            answer=ans,
+            tools_used=used_tools,
             evidence=evidence,
         )
 
@@ -341,7 +340,7 @@ def ask_agent(question: str) -> AgentResponse:
                 "Check the configured model, API connection, "
                 "and service availability."
             ),
-            tools_used=tools_used,
+            tools_used=used_tools,
             evidence=evidence,
             error=type(exc).__name__,
         )

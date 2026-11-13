@@ -1,7 +1,5 @@
 from types import SimpleNamespace
-
 from agent.tools import mlflow_tools
-
 
 def make_run(
     run_id="a" * 32,

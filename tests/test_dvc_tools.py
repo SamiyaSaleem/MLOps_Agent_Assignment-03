@@ -1,7 +1,5 @@
 import pytest
-
 from agent.tools import dvc_tools
-
 
 def test_list_datasets():
     result = dvc_tools.list_datasets()

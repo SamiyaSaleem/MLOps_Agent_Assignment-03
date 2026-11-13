@@ -4,12 +4,10 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-
 import joblib
 import mlflow
 import mlflow.sklearn
 import pandas as pd
-
 from mlflow.models import infer_signature
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -22,7 +20,6 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-
 from agent.tools.dvc_tools import get_current_dataset_version
 
 
@@ -196,10 +193,6 @@ def preprocess_data(run_key):
         random_state=42,
         stratify=y,
     )
-
-    # Preserve feature names and prevent test-set leakage.
-    # Feature scaling happens inside the training pipeline,
-    # where StandardScaler is fitted only on training data.
 
     joblib.dump(
         {
@@ -382,7 +375,6 @@ def model_quality_gate(run_key):
         os.getenv("MODEL_MIN_F1", "0.90")
     )
 
-    # Validate the threshold configuration.
     if not 0 <= threshold <= 1:
         raise ValueError("F1 threshold must be between 0 and 1")
 

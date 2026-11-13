@@ -1,13 +1,10 @@
 import os
 import subprocess
 from pathlib import Path
-
 import mlflow
 import mlflow.sklearn
 import pandas as pd
-
 from mlflow.models import infer_signature
-
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -73,10 +70,8 @@ def get_dataset_provenance():
             "Dataset does not match a recorded version."
         )
 
-    # Our latest dataset version.
     version = versions[-1]
 
-    # Identify the commit that recorded the dataset.
     dataset_commit = git_command(
         "rev-parse",
         f"refs/tags/{version}",
@@ -195,7 +190,6 @@ def train_models():
                 "evaluation_split": "holdout",
             })
 
-            # Record model hyperparameters.
             mlflow.log_param(
                 "model_type",
                 type(model).__name__,
@@ -234,13 +228,10 @@ def train_models():
                     str(value),
                 )
 
-            # Train the model.
             model.fit(X_train, y_train)
 
-            # Generate predictions.
             predictions = model.predict(X_test)
 
-            # Calculate actual evaluation metrics.
             metrics = {
                 "accuracy": accuracy_score(
                     y_test, predictions
@@ -264,7 +255,6 @@ def train_models():
 
             mlflow.log_metrics(metrics)
 
-            # Save evaluation evidence.
             mlflow.log_dict(
                 {
                     "confusion_matrix": confusion_matrix(
@@ -277,13 +267,11 @@ def train_models():
                 "evaluation/results.json",
             )
 
-            # Record the expected model input/output format.
             signature = infer_signature(
                 X_test,
                 predictions,
             )
 
-            # MLflow 3 uses 'name' for logged models.
             model_info = mlflow.sklearn.log_model(
     sk_model=model,
     name="model",

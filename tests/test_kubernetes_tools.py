@@ -1,8 +1,6 @@
 import json
 import subprocess
-
 from agent.tools import kubernetes_tools as kt
-
 
 def test_deployment_healthy(monkeypatch):
     def fake_get_json(arguments):

@@ -2,30 +2,18 @@ import hashlib
 import logging
 import os
 import subprocess
-
 from datetime import datetime, timedelta
 from pathlib import Path
-
 from airflow.sdk import dag, task, get_current_context
 
-
-# ============================================================
-# PROJECT CONFIGURATION
-# ============================================================
 
 PROJECT_ROOT = Path(
     "/home/user/Desktop/assignment-03-mlops-agent"
 )
 
-# Python interpreter containing DVC, MLflow, and scikit-learn
 ML_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 
 log = logging.getLogger(__name__)
-
-
-# ============================================================
-# EXECUTE PIPELINE STAGE
-# ============================================================
 
 def execute_stage(stage_name):
     """
@@ -40,41 +28,31 @@ def execute_stage(stage_name):
         quality_gate
     """
 
-    context = get_current_context()
+    ctxt = get_current_context()
 
-    airflow_run_id = context["run_id"]
+    run_ID_AIRFLOW = ctxt["run_id"]
 
-    # Generate a unique directory identifier for this DAG run.
     run_key = hashlib.sha256(
-        airflow_run_id.encode("utf-8")
+        run_ID_AIRFLOW.encode("utf-8")
     ).hexdigest()[:20]
 
     log.info("Starting stage: %s", stage_name)
     log.info("Pipeline run key: %s", run_key)
 
-    # --------------------------------------------------------
-    # Configure environment for machine-learning subprocess
-    # --------------------------------------------------------
+    env = os.environ.copy()
 
-    environment = os.environ.copy()
-
-    # Make DVC and MLflow executables available.
-    environment["PATH"] = (
+    env["PATH"] = (
         str(ML_PYTHON.parent)
         + os.pathsep
-        + environment.get("PATH", "")
+        + env.get("PATH", "")
     )
 
-    # Connect to our local MLflow tracking server.
-    environment["MLFLOW_TRACKING_URI"] = (
+    env["MLFLOW_TRACKING_URI"] = (
         "http://127.0.0.1:5000"
     )
 
-    # --------------------------------------------------------
-    # Execute training stage
-    # --------------------------------------------------------
 
-    command = [
+    cmd = [
         str(ML_PYTHON),
         "-m",
         "training.airflow_stages",
@@ -87,10 +65,10 @@ def execute_stage(stage_name):
     log.info("Executing approved stage: %s", stage_name)
 
     try:
-        result = subprocess.run(
-            command,
+        r = subprocess.run(
+            cmd,
             cwd=PROJECT_ROOT,
-            env=environment,
+            env=env,
             capture_output=True,
             text=True,
             timeout=300,
@@ -118,27 +96,23 @@ def execute_stage(stage_name):
             f"Unable to execute pipeline stage: {stage_name}"
         ) from exc
 
-    # --------------------------------------------------------
-    # Record execution output
-    # --------------------------------------------------------
-
-    if result.stdout:
+    if r.stdout:
         log.info(
             "Stage output:\n%s",
-            result.stdout
+            r.stdout
         )
 
-    if result.stderr:
+    if r.stderr:
         log.info(
             "Stage diagnostic output:\n%s",
-            result.stderr
+            r.stderr
         )
 
-    if result.returncode != 0:
+    if r.returncode != 0:
         log.error(
             "Stage %s failed with exit code %s",
             stage_name,
-            result.returncode,
+            r.returncode,
         )
 
         raise RuntimeError(
@@ -156,11 +130,6 @@ def execute_stage(stage_name):
         "run_key": run_key,
     }
 
-
-# ============================================================
-# AIRFLOW DAG DEFINITION
-# ============================================================
-
 @dag(
     dag_id="mlops_training_pipeline",
 
@@ -169,15 +138,11 @@ def execute_stage(stage_name):
         "with DVC, MLflow, validation, and quality gate"
     ),
 
-    start_date=datetime(2026, 11, 1),
+    starting_date=datetime(2026, 11, 1),
 
-    # Run only when explicitly triggered.
     schedule=None,
-
     catchup=False,
-
-    # Prevent concurrent DAG runs from interfering.
-    max_active_runs=1,
+    maximum_active_runs=1,
 
     default_args={
         "owner": "mlops-team",
@@ -195,10 +160,7 @@ def execute_stage(stage_name):
 )
 def mlops_training_pipeline():
 
-    # --------------------------------------------------------
-    # TASK 1 — VALIDATE DATASET
-    # --------------------------------------------------------
-
+    #validate the dataset
     @task
     def validate_dataset():
         """
@@ -207,10 +169,8 @@ def mlops_training_pipeline():
         """
         return execute_stage("validate")
 
-    # --------------------------------------------------------
-    # TASK 2 — PREPROCESS DATA
-    # --------------------------------------------------------
 
+    #preprocess the data
     @task
     def preprocess_data():
         """
@@ -219,10 +179,8 @@ def mlops_training_pipeline():
         """
         return execute_stage("preprocess")
 
-    # --------------------------------------------------------
-    # TASK 3 — TRAIN MODEL
-    # --------------------------------------------------------
 
+    #training of the model
     @task
     def train_model():
         """
@@ -231,10 +189,8 @@ def mlops_training_pipeline():
         """
         return execute_stage("train")
 
-    # --------------------------------------------------------
-    # TASK 4 — EVALUATE AND LOG TO MLFLOW
-    # --------------------------------------------------------
 
+    #evaluate and log to mlflow
     @task
     def evaluate_and_log():
         """
@@ -243,11 +199,9 @@ def mlops_training_pipeline():
         in MLflow.
         """
         return execute_stage("evaluate")
+        
 
-    # --------------------------------------------------------
-    # TASK 5 — MODEL QUALITY GATE
-    # --------------------------------------------------------
-
+    #model quality gate
     @task
     def model_quality_gate():
         """
@@ -258,10 +212,8 @@ def mlops_training_pipeline():
         """
         return execute_stage("quality_gate")
 
-    # --------------------------------------------------------
-    # DEFINE TASK DEPENDENCIES
-    # --------------------------------------------------------
 
+    #task dependencies
     validation = validate_dataset()
 
     preprocessing = preprocess_data()
@@ -280,6 +232,4 @@ def mlops_training_pipeline():
         >> quality_gate
     )
 
-
-# Register DAG with Airflow.
 mlops_training_pipeline()

@@ -1,10 +1,8 @@
 import os
 from contextlib import asynccontextmanager
-
 import joblib
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-
 
 MODEL_PATH = os.getenv(
     "MODEL_PATH",
@@ -13,14 +11,12 @@ MODEL_PATH = os.getenv(
 
 model = None
 
-
 class PredictionRequest(BaseModel):
     features: list[float] = Field(
         ...,
         min_length=30,
         max_length=30,
     )
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,7 +41,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
 @app.get("/")
 def home():
     return {
@@ -53,13 +48,11 @@ def home():
         "status": "running",
     }
 
-
 @app.get("/health")
 def health():
     return {
         "status": "alive",
     }
-
 
 @app.get("/ready")
 def ready():
@@ -73,7 +66,6 @@ def ready():
         "status": "ready",
         "model_loaded": True,
     }
-
 
 @app.post("/predict")
 def predict(request: PredictionRequest):

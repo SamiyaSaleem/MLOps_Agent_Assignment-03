@@ -1,8 +1,6 @@
 import os
-
 import mlflow
 from mlflow.tracking import MlflowClient
-
 from agent.tools.mlflow_tools import find_best_run
 
 TRACKING_URI = os.getenv(
@@ -39,7 +37,6 @@ print("Run ID:", run_id)
 print("Model URI:", model_uri)
 print("F1 score:", best["metrics"]["f1_score"])
 
-# Avoid creating duplicate versions when rerunning this script.
 existing = client.search_model_versions(
     filter_string=f"name = '{MODEL_NAME}'"
 )
