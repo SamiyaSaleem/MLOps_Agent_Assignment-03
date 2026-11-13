@@ -14,3 +14,5 @@ airflow.cfg
 airflow-logs/
 models/*.pkl
 models/*.joblib
+.venv-airflow/
+.pipeline_runs/
