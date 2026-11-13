@@ -138,11 +138,11 @@ def execute_stage(stage_name):
         "with DVC, MLflow, validation, and quality gate"
     ),
 
-    starting_date=datetime(2026, 11, 1),
+    start_date=datetime(2026, 11, 1),
 
     schedule=None,
     catchup=False,
-    maximum_active_runs=1,
+    max_active_runs=1,
 
     default_args={
         "owner": "mlops-team",

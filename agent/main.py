@@ -1,35 +1,113 @@
 import argparse
+import json
 from agent.orchestrator import ask_agent
+from agent.tools.kubernetes_tools import (
+    scale_inference_api,
+    get_deployment_health,
+)
+from agent.tools.airflow_tools import trigger_training_pipeline
 
-def main():
-    p = argparse.ArgumentParser(
-        description="Intelligent MLOps AI Agent"
+
+def request_confirmation(action, confirmation_phrase):
+    print("\nACTION REQUIRES APPROVAL")
+    print("=" * 50)
+    print(action)
+    print("Type the following phrase to approve:")
+    print(confirmation_phrase)
+
+    try:
+        response = input("\nConfirmation: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\nAction cancelled.")
+        return False
+
+    if response != confirmation_phrase:
+        print("Confirmation rejected. No action executed.")
+        return False
+
+    return True
+
+
+def execute_scaling(replicas):
+    if type(replicas) is not int or not 1 <= replicas <= 3:
+        print("Replica count must be between 1 and 3.")
+        return 1
+
+    approved = request_confirmation(
+        f"Scale Kubernetes inference deployment to {replicas} replicas.",
+        f"CONFIRM SCALE {replicas}",
     )
 
-    p.add_argument(
-        "--question",
-        type=str,
-        help="Ask the MLOps agent a question",
+    if not approved:
+        return 1
+
+    result = scale_inference_api(
+        replicas=replicas,
+        confirmed=True,
     )
 
-    arg = p.parse_args()
+    print("\nKubernetes Scaling Result:")
+    print(json.dumps(result, indent=2, default=str))
 
-    if arg.question:
-        r = ask_agent(arg.question)
+    if result.get("status") != "success":
+        return 1
 
-        print("\nMLOps AI AGENT")
-        print("=" * 50)
+    print("\nChecking deployment status...")
 
-        print(r.answer)
+    health = get_deployment_health()
 
-        print("\nTools Used:")
-        print(r.tools_used)
+    print(json.dumps(health, indent=2, default=str))
 
-        if r.status != "success":
-            raise SystemExit(1)
+    print(
+        "\nScaling request accepted. "
+        "Replicas may take time to become ready."
+    )
 
-        return
+    return 0
 
+
+def execute_training():
+    approved = request_confirmation(
+        "Trigger the approved Airflow training pipeline.",
+        "CONFIRM TRAINING",
+    )
+
+    if not approved:
+        return 1
+
+    result = trigger_training_pipeline(
+        confirmed=True,
+    )
+
+    print("\nAirflow Training Result:")
+    print(json.dumps(result, indent=2, default=str))
+
+    if result.get("status") != "success":
+        return 1
+
+    print(
+        "\nTraining request accepted. "
+        "Check Airflow for the final DAG run status."
+    )
+
+    return 0
+
+
+def display_agent_response(question):
+    result = ask_agent(question)
+
+    print("\nMLOps AI AGENT")
+    print("=" * 50)
+
+    print(result.answer)
+
+    print("\nTools Used:")
+    print(result.tools_used)
+
+    return 0 if result.status == "success" else 1
+
+
+def interactive_session():
     print("=" * 50)
     print("Intelligent MLOps AI Agent")
     print("DVC | MLflow | Airflow | Kubernetes")
@@ -40,7 +118,6 @@ def main():
     while True:
         try:
             question = input("You: ").strip()
-
         except (EOFError, KeyboardInterrupt):
             print("\nSession ended.")
             break
@@ -51,13 +128,52 @@ def main():
         if not question:
             continue
 
-        r = ask_agent(question)
+        display_agent_response(question)
 
-        print("\nAgent:")
-        print(r.answer)
 
-        print("\nTools Used:", r.tools_used)
-        print("-" * 50)
+def main():
+    parser = argparse.ArgumentParser(
+        description="Intelligent MLOps AI Agent"
+    )
+
+    actions = parser.add_mutually_exclusive_group()
+
+    actions.add_argument(
+        "--question",
+        type=str,
+        help="Ask the MLOps agent a question",
+    )
+
+    actions.add_argument(
+        "--scale-replicas",
+        type=int,
+        help="Request Kubernetes inference scaling",
+    )
+
+    actions.add_argument(
+        "--trigger-training",
+        action="store_true",
+        help="Request an Airflow training pipeline run",
+    )
+
+    arguments = parser.parse_args()
+
+    if arguments.question is not None:
+        raise SystemExit(
+            display_agent_response(arguments.question)
+        )
+
+    if arguments.scale_replicas is not None:
+        raise SystemExit(
+            execute_scaling(arguments.scale_replicas)
+        )
+
+    if arguments.trigger_training:
+        raise SystemExit(
+            execute_training()
+        )
+
+    interactive_session()
 
 
 if __name__ == "__main__":
